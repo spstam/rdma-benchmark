@@ -151,9 +151,8 @@ static void rdma_write_completed_callback(struct doca_rdma_task_write *rdma_writ
 			}
 			doca_buf_get_data(signal_buf, &buf_data);
         	strcpy(buf_data, signal_msg);	
-
 			result = doca_rdma_task_send_allocate_init(resources->rdma, resources->connections[0],
-                                                   signal_buf, 
+                                                   signal_buf,
                                                    (union doca_data){0}, &send_task);
 			if (result == DOCA_SUCCESS) {
 				doca_task_submit(doca_rdma_task_send_as_task(send_task));
@@ -191,13 +190,13 @@ static void rdma_write_completed_callback(struct doca_rdma_task_write *rdma_writ
 		doca_buf_get_data(signal_buf, &buf_data);
         strcpy(buf_data, signal_msg);	
 		result = doca_rdma_task_send_allocate_init(resources->rdma, resources->connections[0],
-												signal_buf,
+												signal_buf, // Pass the doca_buf* here
 												(union doca_data){0}, &send_task);
 		if (result == DOCA_SUCCESS) {
 			doca_task_submit(doca_rdma_task_send_as_task(send_task));
 		} else {
 			DOCA_LOG_ERR("Failed to allocate signal task: %s", doca_error_get_descr(result));
-			doca_buf_dec_refcount(signal_buf, NULL);
+			doca_buf_dec_refcount(signal_buf, NULL); // Clean up the buffer if task allocation fails
 		}
     }
 }
@@ -343,11 +342,13 @@ static doca_error_t rdma_write_prepare_and_submit_task(struct rdma_resources *re
 	size_t remote_mmap_range_len;
 	void *src_buf_data;
 	doca_error_t result, tmp_result;
+
 	if(resources->transfers_left == 0){
         DOCA_LOG_INFO("\nStarting benchmark: %d transfers\n", NUM_TRANSFERS);
         resources->transfers_left = NUM_TRANSFERS;
         clock_gettime(CLOCK_MONOTONIC, &resources->start_time);
 	}
+
 	/* Create remote mmap */
 	result = doca_mmap_create_from_export(NULL,
 					      resources->remote_mmap_descriptor,
@@ -384,6 +385,7 @@ static doca_error_t rdma_write_prepare_and_submit_task(struct rdma_resources *re
 		DOCA_LOG_ERR("Failed to get source buffer data: %s", doca_error_get_descr(result));
 		goto destroy_src_buf;
 	}
+	// strncpy(src_buf_data, resources->cfg->write_string, write_string_len);
 	memset(src_buf_data, 'S', MAX_BUFF_SIZE);
 	/* Add dst buffer to DOCA buffer inventory */
 	result = doca_buf_inventory_buf_get_by_addr(resources->buf_inventory,

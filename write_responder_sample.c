@@ -144,7 +144,6 @@ static doca_error_t rdma_write_responder_export_and_connect(struct rdma_resource
 	return result;
 }
 
-//helper for receive final signal
 static void final_signal_received_callback(struct doca_rdma_task_receive *task,
                                            union doca_data task_user_data,
                                            union doca_data ctx_user_data)
@@ -229,6 +228,7 @@ static doca_error_t post_final_signal_receive(struct rdma_resources *resources)
         DOCA_LOG_ERR("Failed to get a buffer for the receive task: %s", doca_error_get_descr(result));
         return result;
     }
+    // Allocate and initialize the receive task
     result = doca_rdma_task_receive_allocate_init(resources->rdma, resources->dst_buf, user_data, &recv_task);
     if (result != DOCA_SUCCESS) {
         DOCA_LOG_ERR("Failed to allocate receive task: %s", doca_error_get_descr(result));
@@ -237,6 +237,7 @@ static doca_error_t post_final_signal_receive(struct rdma_resources *resources)
 
     DOCA_LOG_INFO("Posted RDMA receive task to wait for requester's completion signal.");
     resources->num_remaining_tasks++;
+    // Submit the task
     return doca_task_submit(doca_rdma_task_receive_as_task(recv_task));
 }
 
@@ -278,6 +279,7 @@ static void rdma_write_responder_state_change_callback(const union doca_data use
 		if (cfg->use_rdma_cm == true)
 			break;
 
+		// result = responder_wait_for_requester_finish(resources);
 		result = post_final_signal_receive(resources);
 		if (result != DOCA_SUCCESS) {
 			DOCA_LOG_ERR("Failed to post final signal receive task: %s", doca_error_get_descr(result));
