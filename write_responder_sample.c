@@ -34,7 +34,8 @@
 #define MAX_BUFF_SIZE (65536) /* Maximum DOCA buffer size */
 #define SIG_SIZE 8
 #define DATA_OFFSET 0
-#define SIGNAL_OFFSET (MAX_BUFF_SIZE)
+#define NUM_TRANSFERS 1000
+#define SIGNAL_OFFSET (MAX_BUFF_SIZE * NUM_TRANSFERS)
 DOCA_LOG_REGISTER(RDMA_WRITE_RESPONDER::SAMPLE);
 char bufferr[MAX_BUFF_SIZE];
 /*
@@ -153,14 +154,14 @@ static void final_signal_received_callback(struct doca_rdma_task_receive *task,
     DOCA_LOG_INFO("\n Received final signal from requester. Benchmark complete.\n");
 
 	/* The RDMA Write target memory (where requester wrote data) */
-    char *rdma_written_data = (char *)resources->mmap_memrange;
+    char *rdma_written_data = (char *)resources->mmap_memrange + 16000;
 
     /* Print the first bytes written by the requester */
     char print_buf[65];
     memcpy(print_buf, rdma_written_data, 64);
     print_buf[64] = '\0';
 
-    DOCA_LOG_INFO("First 64 bytes written via RDMA Write: \"%s\"", print_buf);
+    DOCA_LOG_INFO("Some 64 bytes written via RDMA Write: \"%s\"", print_buf);
 
     /* Print the received message ("done") separately */
     struct doca_buf *recv_buf = doca_rdma_task_receive_get_dst_buf(task);
@@ -212,6 +213,7 @@ static void rdma_receive_error_callback(struct doca_rdma_task_receive *rdma_rece
 		(void)doca_ctx_stop(resources->rdma_ctx);
 	}
 }
+
 
 //instead of waiting
 static doca_error_t post_final_signal_receive(struct rdma_resources *resources)
