@@ -147,7 +147,6 @@ static doca_error_t rdma_write_responder_export_and_connect(struct rdma_resource
 
 	return result;
 }
-
 //helper for receive final signal
 static void final_signal_received_callback(struct doca_rdma_task_receive *task,
                                            union doca_data task_user_data,
@@ -221,7 +220,6 @@ static void rdma_receive_error_callback(struct doca_rdma_task_receive *rdma_rece
 		(void)doca_ctx_stop(resources->rdma_ctx);
 	}
 }
-
 //instead of waiting
 static doca_error_t post_final_signal_receive(struct rdma_resources *resources)
 {
@@ -249,6 +247,7 @@ static doca_error_t post_final_signal_receive(struct rdma_resources *resources)
     // Submit the task
     return doca_task_submit(doca_rdma_task_receive_as_task(recv_task));
 }
+
 /*
  * RDMA write responder state change callback
  * This function represents the state machine for this RDMA program
