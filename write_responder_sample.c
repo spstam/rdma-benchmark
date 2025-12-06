@@ -31,151 +31,42 @@
 
 #include "rdma_common.h"
 
-#define MAX_BUFF_SIZE (64000000) /* Maximum DOCA buffer size */
+#define MAX_BUFF_SIZE (65536) /* Maximum DOCA buffer size */
 #define SIG_SIZE 8
 #define DATA_OFFSET 0
-#define NUM_TRANSFERS 1000
-#define PHYSICAL_BUFFER_SIZE 1024LL * 1024 * 1024
+#define NUM_TRANSFERS 1000000
+#define PHYSICAL_BUFFER_SIZE (1024LL * 1024 * 1024)
 #define NUM_CHUNKS_IN_BUFFER (PHYSICAL_BUFFER_SIZE / MAX_BUFF_SIZE)
 
 #define SIGNAL_OFFSET 1024000008
 DOCA_LOG_REGISTER(RDMA_WRITE_RESPONDER::SAMPLE);
 char bufferr[MAX_BUFF_SIZE];
-/*
- * Write the connection details and the mmap details for the requester to read,
- * and read the connection details of the requester
- * In DC transport mode it is only needed to read the remote connection details
- *
- * @cfg [in]: Configuration parameters
- * @resources [in/out]: RDMA resources
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t write_read_connection(struct rdma_config *cfg, struct rdma_resources *resources)
-{
-	doca_error_t result = DOCA_SUCCESS;
 
-	/* Write the RDMA connection details */
-	result = write_file(cfg->local_connection_desc_path,
-			    (char *)resources->rdma_conn_descriptor,
-			    resources->rdma_conn_descriptor_size);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to write the RDMA connection details: %s", doca_error_get_descr(result));
-		return result;
-	}
-
-	/* Write the mmap connection details */
-	result = write_file(cfg->remote_resource_desc_path,
-			    (char *)resources->mmap_descriptor,
-			    resources->mmap_descriptor_size);
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to write the RDMA mmap details: %s", doca_error_get_descr(result));
-		return result;
-	}
-
-	DOCA_LOG_INFO("You can now copy %s and %s to the requester",
-		      cfg->local_connection_desc_path,
-		      cfg->remote_resource_desc_path);
-
-	if (cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_DC) {
-		return result;
-	}
-	DOCA_LOG_INFO("Please copy %s from the requester and then press enter", cfg->remote_connection_desc_path);
-
-	/* Wait for enter */
-	wait_for_enter();
-
-	/* Read the remote RDMA connection details */
-	result = read_file(cfg->remote_connection_desc_path,
-			   (char **)&resources->remote_rdma_conn_descriptor,
-			   &resources->remote_rdma_conn_descriptor_size);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("Failed to read the remote RDMA connection details: %s", doca_error_get_descr(result));
-
-	return result;
-}
-
-/*
- * Export and receive connection details, and connect to the remote RDMA
- *
- * @resources [in]: RDMA resources
- * @return: DOCA_SUCCESS on success and DOCA_ERROR otherwise
- */
-static doca_error_t rdma_write_responder_export_and_connect(struct rdma_resources *resources)
-{
-	doca_error_t result;
-
-	if (resources->cfg->use_rdma_cm == true)
-		return rdma_cm_connect(resources);
-
-	/* Export RDMA connection details */
-	result = doca_rdma_export(resources->rdma,
-				  &(resources->rdma_conn_descriptor),
-				  &(resources->rdma_conn_descriptor_size),
-				  &(resources->connections[0]));
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to export RDMA: %s", doca_error_get_descr(result));
-		return result;
-	}
-
-	/* Export RDMA mmap */
-	result = doca_mmap_export_rdma(resources->mmap,
-				       resources->doca_device,
-				       (const void **)&(resources->mmap_descriptor),
-				       &(resources->mmap_descriptor_size));
-	if (result != DOCA_SUCCESS) {
-		DOCA_LOG_ERR("Failed to export DOCA mmap for RDMA: %s", doca_error_get_descr(result));
-		return result;
-	}
-
-	/* write and read connection details from the requester */
-	result = write_read_connection(resources->cfg, resources);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("Failed to write and read connection details from the requester: %s",
-			     doca_error_get_descr(result));
-
-	if (resources->cfg->transport_type == DOCA_RDMA_TRANSPORT_TYPE_DC) {
-		return result;
-	}
-	/* Connect RDMA */
-	result = doca_rdma_connect(resources->rdma,
-				   resources->remote_rdma_conn_descriptor,
-				   resources->remote_rdma_conn_descriptor_size,
-				   resources->connections[0]);
-	if (result != DOCA_SUCCESS)
-		DOCA_LOG_ERR("Failed to connect the responder's RDMA to the requester's RDMA: %s",
-			     doca_error_get_descr(result));
-
-	return result;
-}
 //helper for receive final signal
 static void final_signal_received_callback(struct doca_rdma_task_receive *task,
                                            union doca_data task_user_data,
                                            union doca_data ctx_user_data)
 {
     doca_error_t result = DOCA_SUCCESS;
-	// char buffer[MAX_BUFF_SIZE+1];
     struct rdma_resources *resources = (struct rdma_resources *)ctx_user_data.ptr;
     DOCA_LOG_INFO("\n Received final signal from requester. Benchmark complete.\n");
 
 	/* The RDMA Write target memory (where requester wrote data) */
-	
     /* Print the first bytes written by the requester */
     char print_buf[65];
 	for(int j=0; j<NUM_CHUNKS_IN_BUFFER;j++){
 		char *rdma_written_data = (char *)resources->mmap_memrange + MAX_BUFF_SIZE * j;
 		memcpy(print_buf, rdma_written_data, 64);
 		print_buf[64] = '\0';
-		DOCA_LOG_INFO("Some 64 bytes written via RDMA Write: \"%s\"", print_buf);
+		printf("Some 64 bytes written via RDMA Write: \"%s\" \n", print_buf);//
 	}
 
     /* Print the received message ("done") separately */
     struct doca_buf *recv_buf = doca_rdma_task_receive_get_dst_buf(task);
     void *recv_data = NULL;
-    size_t recv_len = 0;
     doca_buf_get_data(recv_buf, &recv_data);
 
     DOCA_LOG_INFO("Final signal message: \"%s\"", (char *)recv_data);
-    // Free the task and its buffer
     doca_task_free(doca_rdma_task_receive_as_task(task));
 	result = doca_buf_dec_refcount(recv_buf, NULL);
 	if (result != DOCA_SUCCESS) {
@@ -184,8 +75,7 @@ static void final_signal_received_callback(struct doca_rdma_task_receive *task,
 	resources->num_remaining_tasks--;
 	/* Stop context once all tasks are completed */
 	if (resources->num_remaining_tasks == 0) {
-		if (resources->cfg->use_rdma_cm == true)
-			(void)rdma_cm_disconnect(resources);
+		(void)rdma_cm_disconnect(resources);
 		(void)doca_ctx_stop(resources->rdma_ctx);
 	}
 }
@@ -215,12 +105,12 @@ static void rdma_receive_error_callback(struct doca_rdma_task_receive *rdma_rece
 	resources->num_remaining_tasks--;
 	/* Stop context once all tasks are completed */
 	if (resources->num_remaining_tasks == 0) {
-		if (resources->cfg->use_rdma_cm == true)
-			(void)rdma_cm_disconnect(resources);
+		(void)rdma_cm_disconnect(resources);
 		(void)doca_ctx_stop(resources->rdma_ctx);
 	}
 }
-//instead of waiting
+
+
 static doca_error_t post_final_signal_receive(struct rdma_resources *resources)
 {
     doca_error_t result = DOCA_SUCCESS;
@@ -263,7 +153,6 @@ static void rdma_write_responder_state_change_callback(const union doca_data use
 						       enum doca_ctx_states next_state)
 {
 	struct rdma_resources *resources = (struct rdma_resources *)user_data.ptr;
-	struct rdma_config *cfg = resources->cfg;
 	doca_error_t result = DOCA_SUCCESS;
 	(void)prev_state;
 	(void)ctx;
@@ -275,23 +164,14 @@ static void rdma_write_responder_state_change_callback(const union doca_data use
 	case DOCA_CTX_STATE_RUNNING:
 		DOCA_LOG_INFO("RDMA context is running");
 
-		result = rdma_write_responder_export_and_connect(resources);
+		result = rdma_cm_connect(resources);
 		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("rdma_write_responder_export_and_connect() failed: %s",
+			DOCA_LOG_ERR("rdma_cm_connect() failed: %s",
 				     doca_error_get_descr(result));
 			break;
 		} else
 			DOCA_LOG_INFO("RDMA context finished initialization");
 
-		if (cfg->use_rdma_cm == true)
-			break;
-
-		// result = responder_wait_for_requester_finish(resources);
-		result = post_final_signal_receive(resources);
-		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to post final signal receive task: %s", doca_error_get_descr(result));
-			(void)doca_ctx_stop(ctx);
-		}
 		break;
 	case DOCA_CTX_STATE_STOPPING:
 		/**
@@ -383,19 +263,19 @@ doca_error_t rdma_write_responder(struct rdma_config *cfg)
 		goto destroy_resources;
 	}
 
-	if (cfg->use_rdma_cm == true) {
-		resources.is_requester = false;
-		resources.require_remote_mmap = true;
-		resources.task_fn = post_final_signal_receive;
-		result = config_rdma_cm_callback_and_negotiation_task(&resources,
-								      /* need_send_mmap_info */ true,
-								      /* need_recv_mmap_info */ false);
-		if (result != DOCA_SUCCESS) {
-			DOCA_LOG_ERR("Failed to config RDMA CM callbacks and negotiation functions: %s",
-				     doca_error_get_descr(result));
-			goto destroy_resources;
-		}
-	}
+    //init -cm resources
+    resources.is_requester = false;
+    resources.require_remote_mmap = true;
+    resources.task_fn = post_final_signal_receive;
+    result = config_rdma_cm_callback_and_negotiation_task(&resources,
+                                    /* need_send_mmap_info */ true,
+                                    /* need_recv_mmap_info */ false);
+    if (result != DOCA_SUCCESS) {
+        DOCA_LOG_ERR("Failed to config RDMA CM callbacks and negotiation functions: %s",
+                    doca_error_get_descr(result));
+        goto destroy_resources;
+    }
+	
 
 	/* Start RDMA context */
 	result = doca_ctx_start(resources.rdma_ctx);
